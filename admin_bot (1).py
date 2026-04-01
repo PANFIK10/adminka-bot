@@ -32,8 +32,9 @@ if not ADMIN_BOT_TOKEN:
 if not ADMIN_IDS:
     raise RuntimeError("Не задан ADMIN_IDS — укажи свой Telegram ID")
 
-bot = Bot(token=ADMIN_BOT_TOKEN)
-dp  = Dispatcher(storage=MemoryStorage())
+bot       = Bot(token=ADMIN_BOT_TOKEN)
+main_bot  = Bot(token=os.getenv("MAIN_BOT_TOKEN", ADMIN_BOT_TOKEN))
+dp        = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
 db_pool: asyncpg.Pool | None = None
@@ -206,7 +207,7 @@ async def topup_comment(message: types.Message, state: FSMContext):
 
     # Уведомляем самого пользователя
     try:
-        await bot.send_message(
+        await main_bot.send_message(
             user_id,
             f"💰 На ваш баланс начислено <b>{amount:.1f} кредитов</b>\n"
             f"📝 {comment}\n"
