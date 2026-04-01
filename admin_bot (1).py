@@ -18,6 +18,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
 DATABASE_URL    = os.getenv("DATABASE_URL")
@@ -32,7 +33,7 @@ if not ADMIN_IDS:
     raise RuntimeError("Не задан ADMIN_IDS — укажи свой Telegram ID")
 
 bot = Bot(token=ADMIN_BOT_TOKEN)
-dp  = Dispatcher()
+dp  = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
 db_pool: asyncpg.Pool | None = None
