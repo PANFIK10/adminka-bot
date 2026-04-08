@@ -134,6 +134,9 @@ def get_admin_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📢 Рассылка",     callback_data="cmd_broadcast"),
             InlineKeyboardButton(text="🎁 Начислить всем", callback_data="cmd_give_all"),
         ],
+        [
+            InlineKeyboardButton(text="🤖 Баланс OpenRouter", callback_data="cmd_openrouter"),
+        ],
     ])
 
 # ---------------------------------------------------------------------------
@@ -215,6 +218,26 @@ async def menu_button(call: types.CallbackQuery, state: FSMContext):
         return
     if cmd == "top":
         await top_cmd(call.message)
+        return
+    if cmd == "openrouter":
+        info = await get_openrouter_balance()
+        if info:
+            status = "🔴 Низкий!" if info["balance"] < OPENROUTER_LOW_BALANCE else "🟢 Норма"
+            await call.message.answer(
+                f"🤖 <b>Баланс OpenRouter</b>\n\n"
+                f"💰 Остаток: <b>${info['balance']:.2f}</b> {status}\n"
+                f"📊 Потрачено: ${info['used']:.2f}\n"
+                f"💳 Всего загружено: ${info['total']:.2f}\n\n"
+                f"<a href='https://openrouter.ai/credits'>Пополнить баланс →</a>",
+                parse_mode="HTML",
+            )
+        else:
+            await call.message.answer(
+                "❌ Не удалось получить баланс OpenRouter.\n"
+                "Проверь переменную <code>OPENROUTER_API_KEY</code>.",
+                parse_mode="HTML",
+            )
+        await call.message.answer("Меню:", reply_markup=get_admin_kb())
         return
 
     # Многошаговые — запрашиваем ввод
@@ -871,8 +894,61 @@ async def check_user(message: types.Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 # ЗАПУСК
 # ---------------------------------------------------------------------------
+
+import aiohttp
+
+OPENROUTER_API_KEY      = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_LOW_BALANCE  = 15.0  # порог в USD для алерта
+
+
+async def get_openrouter_balance() -> dict | None:
+    """Получает баланс OpenRouter через API."""
+    if not OPENROUTER_API_KEY:
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(
+                "https://openrouter.ai/api/v1/credits",
+                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            )
+            if resp.status == 200:
+                data = await resp.json()
+                # OpenRouter возвращает {"data": {"total_credits": X, "total_usage": Y}}
+                credits = data.get("data", {})
+                total   = float(credits.get("total_credits", 0))
+                used    = float(credits.get("total_usage", 0))
+                balance = round(total - used, 4)
+                return {"balance": balance, "total": total, "used": used}
+    except Exception as e:
+        logging.error(f"OpenRouter balance error: {e}")
+    return None
+
+
+async def openrouter_monitor():
+    """Фоновая задача — проверяет баланс каждый час и шлёт алерт при низком балансе."""
+    await asyncio.sleep(60)  # ждём старт бота
+    while True:
+        info = await get_openrouter_balance()
+        if info and info["balance"] < OPENROUTER_LOW_BALANCE:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"⚠️ <b>Низкий баланс OpenRouter!</b>\n\n"
+                        f"💰 Остаток: <b>${info['balance']:.2f}</b>\n"
+                        f"📊 Потрачено всего: ${info['used']:.2f}\n\n"
+                        f"Пополни на <a href='https://openrouter.ai/credits'>openrouter.ai/credits</a>",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+        await asyncio.sleep(3600)  # проверяем раз в час
+
+
 async def main():
     print("Админ-бот запущен!")
+    asyncio.create_task(openrouter_monitor())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
